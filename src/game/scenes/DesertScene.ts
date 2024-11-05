@@ -11,7 +11,7 @@ export class DesertScene extends Scene {
     }
 
     preload() {
-        this.load.image('desertBackground', '/assets/desert.png');
+        this.load.image('desertBackground', '/assets/arizona.png');
         this.load.spritesheet('idle', '/assets/idle.png', { frameWidth: 56, frameHeight: 56 });
         this.load.spritesheet('running', '/assets/running.png', { frameWidth: 56, frameHeight: 56 });
     }

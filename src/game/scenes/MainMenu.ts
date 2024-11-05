@@ -1,12 +1,13 @@
-import { GameObjects, Scene } from 'phaser';
+import { GameObjects, Scene, Physics } from 'phaser';
 import { EventBus } from '../EventBus';
 
 export class MainMenu extends Scene {
     background: GameObjects.Image;
     mainTitle: GameObjects.Text;
     startText: GameObjects.Text;
-    character: GameObjects.Sprite;
+    character: Physics.Arcade.Sprite;
     cursors: Phaser.Types.Input.Keyboard.CursorKeys | null = null;
+    spacebar: Phaser.Input.Keyboard.Key | undefined;
 
     constructor() {
         super('MainMenu');
@@ -15,14 +16,9 @@ export class MainMenu extends Scene {
     preload() {
         // Preload the background and character sprite sheets
         this.load.image('background', '/assets/utah.png');
-        this.load.spritesheet('idle', '/assets/idle.png', {
-            frameWidth: 56,
-            frameHeight: 56
-        });
-        this.load.spritesheet('running', '/assets/running.png', {
-            frameWidth: 56,
-            frameHeight: 56
-        });
+        this.load.spritesheet('idle', '/assets/idle.png', { frameWidth: 56, frameHeight: 56 });
+        this.load.spritesheet('running', '/assets/running.png', { frameWidth: 56, frameHeight: 56 });
+        this.load.spritesheet('jumping', '/assets/jumping.png', { frameWidth: 56, frameHeight: 56 });
     }
 
     create() {
@@ -30,10 +26,9 @@ export class MainMenu extends Scene {
         this.background = this.add.image(0, 0, 'background')
             .setOrigin(0)
             .setDepth(-1);
-
         this.scaleBackground();
 
-        // Adjust background size and position on resize
+        // Adjust background size on resize
         this.scale.on('resize', () => this.scaleBackground());
 
         // Main title: iDEFi.AI
@@ -60,7 +55,7 @@ export class MainMenu extends Scene {
         .setOrigin(0.5)
         .setDepth(100);
 
-        // Add idle animation
+        // Add animations
         this.anims.create({
             key: 'idleAnim',
             frames: this.anims.generateFrameNumbers('idle', { start: 0, end: 5 }),
@@ -68,7 +63,6 @@ export class MainMenu extends Scene {
             repeat: -1
         });
 
-        // Add running animation
         this.anims.create({
             key: 'runningAnim',
             frames: this.anims.generateFrameNumbers('running', { start: 0, end: 5 }),
@@ -76,17 +70,30 @@ export class MainMenu extends Scene {
             repeat: -1
         });
 
-        // Add the character sprite and play the idle animation
-        this.character = this.add.sprite(this.scale.width / 2, this.scale.height * 0.75, 'idle')
-            .setOrigin(0.5, -0.63)
+        this.anims.create({
+            key: 'jumpingAnim',
+            frames: this.anims.generateFrameNumbers('jumping', { start: 0, end: 5 }),
+            frameRate: 10,
+            repeat: -1
+        });
+
+        // Add the character sprite with physics, gravity, and animations
+        const playerStartY = this.scale.height - 100;
+        this.character = this.physics.add.sprite(this.scale.width / 2, playerStartY, 'idle')
+            .setOrigin(0.5, -0.67)
             .setScale(2)
             .setDepth(101)
+            .setCollideWorldBounds(true)
             .play('idleAnim');
 
-        // Capture keyboard input for arrow keys
-        this.cursors = this.input?.keyboard?.createCursorKeys() || null;
+        // Ensure `character.body` is treated as `Arcade.Body`
+        (this.character.body as Physics.Arcade.Body).setGravityY(500);
 
-        // Listen for scene transition event
+        // Capture keyboard input for arrow keys and spacebar
+        this.cursors = this.input.keyboard?.createCursorKeys() || null;
+        this.spacebar = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+
+        // Scene transition event
         EventBus.on('transitionToDesert', () => {
             this.transitionToScene('DesertScene', 'leaving Salt Lake City, UT...');
         });
@@ -96,36 +103,45 @@ export class MainMenu extends Scene {
     }
 
     update() {
-        // Check if cursors are defined to avoid null errors
-        if (!this.cursors) return;
+        if (!this.character || !this.cursors) return;
 
-        // Check for arrow key presses and move the character accordingly
+        // Ensure `character.body` is of type `Arcade.Body`
+        const characterBody = this.character.body as Physics.Arcade.Body;
+
+        // Player movement
         if (this.cursors.left?.isDown) {
-            this.character.setFlipX(true); // Flip the sprite to face left
-            this.character.x -= 3; // Move left
-            this.character.play('runningAnim', true); // Play running animation
+            this.character.setFlipX(true);
+            this.character.x -= 3;
+            if (characterBody.blocked.down) {
+                this.character.play('runningAnim', true); // Only play running animation if on the ground
+            }
         } else if (this.cursors.right?.isDown) {
-            this.character.setFlipX(false); // Face right
-            this.character.x += 3; // Move right
-            this.character.play('runningAnim', true);
-
+            this.character.setFlipX(false);
+            this.character.x += 3;
+            if (characterBody.blocked.down) {
+                this.character.play('runningAnim', true);
+            }
             // Transition to DesertScene when reaching the right edge
             if (this.character.x >= this.scale.width - this.character.width) {
                 EventBus.emit('transitionToDesert');
             }
-        } else {
-            this.character.play('idleAnim', true); // If no key is pressed, play idle animation
+        } else if (characterBody.blocked.down) {
+            this.character.play('idleAnim', true);
+        }
+
+        // Handle jumping with spacebar
+        if (this.spacebar?.isDown && characterBody.blocked.down) {
+            this.character.setVelocityY(-170); // Adjust jump height as needed
+            this.character.play('jumpingAnim', true);
         }
     }
 
     scaleBackground() {
-        // Set background dimensions to fit the viewport exactly
         const { width, height } = this.scale;
         this.background.setDisplaySize(width, height);
     }
 
     transitionToScene(nextScene: string, message: string) {
-        // Display the transition message
         const transitionText = this.add.text(this.scale.width / 2, this.scale.height / 2, message, {
             fontFamily: 'Arial Black',
             fontSize: '32px',
@@ -137,7 +153,6 @@ export class MainMenu extends Scene {
         .setOrigin(0.5)
         .setDepth(200);
 
-        // Animate the message to fade out, then start the next scene
         this.tweens.add({
             targets: transitionText,
             alpha: { from: 1, to: 0 },
